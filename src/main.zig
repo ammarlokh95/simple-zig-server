@@ -52,14 +52,14 @@ const HttpRequest = struct {
         self.allocator.free(self.body);
         self.headers.deinit();
     }
-    pub fn bufferInit(buffer: []const u8, allocator: mem.Allocator) NetworkError!*Self {
+    pub fn bufferInit(buffer: []const u8, allocator: mem.Allocator) NetworkError!Self {
         var self = Self.init(allocator);
         var content = std.mem.splitSequence(u8, buffer, "\r\n");
         const req_line = content.next();
         try self.parseRequestLine(req_line);
 
         try self.setHeaders(&content);
-        return &self;
+        return self;
     }
 
     fn parseRequestLine(self: *Self, request_line: ?[]const u8) NetworkError!void {
@@ -141,8 +141,11 @@ const HttpServer = struct {
         defer conn.stream.close();
 
         std.debug.print("request: \n{s}", .{buffer});
-        if (HttpRequest.bufferInit(&buffer, self.allocator)) |request| {
-            if (self.parsePath(request, &response)) {
+
+        var try_request = HttpRequest.bufferInit(&buffer, self.allocator);
+        if (try_request) |*request| {
+            defer request.deinit();
+            if (self.parsePath(request.*, &response)) {
                 try response.writeResponse(conn);
             } else |err| {
                 _ = try conn.stream.writer().print("HTTP/1.1 {s}\r\n\r\n", .{INTERNAL_ERROR});
@@ -154,7 +157,11 @@ const HttpServer = struct {
         }
     }
 
-    fn parsePath(self: HttpServer, request: *HttpRequest, response: *HttpResponse) NetworkError!void {
+    fn parsePath(self: HttpServer, request: HttpRequest, response: *HttpResponse) NetworkError!void {
+        if (std.mem.eql(u8, request.method, "POST")) {
+            try self.handlePost(request, response);
+            return;
+        }
         if (std.mem.eql(u8, request.path, "/")) {
             response.status = OK_STATUS;
             return;
@@ -201,6 +208,27 @@ const HttpServer = struct {
         } else {
             response.status = NOT_FOUND;
             return;
+        }
+    }
+
+    pub fn handlePost(self: Self, request: HttpRequest, response: *HttpResponse) NetworkError!void {
+        if (mem.startsWith(u8, request.path, "/write/")) {
+            const dir = self.file_dir;
+            const file_name = request.path[7..];
+            const directory = std.fs.openDirAbsolute(dir, .{}) catch {
+                response.status = NOT_FOUND;
+                return;
+            };
+            const file = directory.createFile(file_name, .{}) catch {
+                response.status = NOT_FOUND;
+                return;
+            };
+            defer file.close();
+            file.writeAll(request.body) catch {
+                response.status = INTERNAL_ERROR;
+                return;
+            };
+            response.status = OK_STATUS;
         }
     }
 };
