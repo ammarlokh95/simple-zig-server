@@ -65,28 +65,12 @@ const HttpRequest = struct {
     fn parseRequestLine(self: *Self, request_line: ?[]const u8) NetworkError!void {
         if (request_line) |req_line| {
             var req_line_parts = std.mem.splitScalar(u8, req_line, ' ');
-            const method = req_line_parts.next();
-            if (method) |m| {
-                self.method = m;
-            } else {
-                return NetworkError.InvalidHTTPStructure;
-            }
+            self.method = req_line_parts.next() orelse return NetworkError.InvalidHTTPStructure;
 
-            const req_path = req_line_parts.next();
-            if (req_path) |path| {
-                self.path = path;
-            } else {
-                return NetworkError.InvalidHTTPStructure;
-            }
+            self.path = req_line_parts.next() orelse return NetworkError.InvalidHTTPStructure;
 
-            const protocol = req_line_parts.next();
-            if (protocol) |proto| {
-                if (!mem.eql(u8, proto, "HTTP/1.1")) {
-                    return NetworkError.InvalidHTTPStructure;
-                }
-
-                self.protocol = proto;
-            } else {
+            self.protocol = req_line_parts.next() orelse return NetworkError.InvalidHTTPStructure;
+            if (!mem.eql(u8, self.protocol, "HTTP/1.1")) {
                 return NetworkError.InvalidHTTPStructure;
             }
         } else {
@@ -144,7 +128,6 @@ const HttpServer = struct {
 
         var try_request = HttpRequest.bufferInit(&buffer, self.allocator);
         if (try_request) |*request| {
-            defer request.deinit();
             if (self.parsePath(request.*, &response)) {
                 try response.writeResponse(conn);
             } else |err| {
