@@ -237,10 +237,7 @@ pub fn main() !void {
     var alloc = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = alloc.deinit();
     const allocator = alloc.allocator();
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    std.debug.print("Logs from your program will appear here!\n", .{});
 
-    // Uncomment this block to pass the first stage
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
     var nextDir: i16 = 0;
