@@ -32,7 +32,7 @@ const HttpResponse = struct {
             _ = try conn.stream.writer().print("{s}: {s}\r\n", .{ header.key_ptr.*, header.value_ptr.* });
         }
         _ = try conn.stream.write("\r\n");
-        _ = try conn.stream.writer().write(self.body);
+        _ = try conn.stream.writer().print("{s}", .{self.body});
     }
 };
 
@@ -48,16 +48,18 @@ const HttpRequest = struct {
     pub fn init(allocator: mem.Allocator) Self {
         return .{ .path = undefined, .method = undefined, .protocol = undefined, .headers = Headers.init(allocator), .body = undefined, .allocator = allocator };
     }
-    pub fn deinit(self: *const Self) void {
+    pub fn deinit(self: *Self) void {
+        self.allocator.free(self.body);
         self.headers.deinit();
     }
-    pub fn bufferInit(buffer: []const u8, allocator: mem.Allocator) NetworkError!Self {
+    pub fn bufferInit(buffer: []const u8, allocator: mem.Allocator) NetworkError!*Self {
         var self = Self.init(allocator);
         var content = std.mem.splitSequence(u8, buffer, "\r\n");
         const req_line = content.next();
         try self.parseRequestLine(req_line);
+
         try self.setHeaders(&content);
-        return self;
+        return &self;
     }
 
     fn parseRequestLine(self: *Self, request_line: ?[]const u8) NetworkError!void {
@@ -152,7 +154,7 @@ const HttpServer = struct {
         }
     }
 
-    fn parsePath(self: HttpServer, request: HttpRequest, response: *HttpResponse) NetworkError!void {
+    fn parsePath(self: HttpServer, request: *HttpRequest, response: *HttpResponse) NetworkError!void {
         if (std.mem.eql(u8, request.path, "/")) {
             response.status = OK_STATUS;
             return;
